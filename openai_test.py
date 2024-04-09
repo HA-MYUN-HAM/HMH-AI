@@ -1,5 +1,7 @@
 import os
 import openai
+import pandas as pd
+
 
 client = openai.api_key = os.getenv("OPENAI_API_KEY")
 
@@ -24,6 +26,24 @@ sentences = [
     "당신이 맡은 일에 대해 마감 기한을 지켜주세요. 진짜 짜증나서 같이 일 못하겠어요. ",
     "당신은 항상 긍정적이고 최선을 다하지만, 기술적으로 성장하는 모습을 보여주시길 바랍니다."
 ]
+
+prompt = f"""
+입력된 테스트는 어떤 한 사람에 대한 동료평가 내용입니다.
+피드백 대상은 문장 내에서 표현되며, 만약 대상을 명확히 할 수 없을 경우, ///대상없음/// 으로 출력하세요
+입력 텍스트의 내용에서 긍정적인 부분과 부정적인 부분을 각각 넘버링 없이 문장 형식으로 정리하세요.
+단, 입력 텍스트에서 혐오표현, 비속어, 욕설, 은어, 감정적인 표현 등은 다른 착한 표현으로 대체해서 정리해야 합니다.
+
+<피드백 대상> 님의 피드백 결과
+긍정적인 피드백: ...
+부정적인 피드백: ...
+
+[대체된 표현의 개수: ]
+대체된 표현: 원래표현 -> 대체된 표현
+...
+대체된 표현: 원래표현 -> 대체된 표현 
+
+"""
+
 # 문장들을 하나의 문자열로 결합
 positive_input = "\n".join(positive)
 negative_input = "\n".join(negative)
@@ -32,16 +52,47 @@ input_text = "\n".join(sentences)
 analyze = openai.chat.completions.create (
     model="gpt-4",
     messages=[
-        {"role": "system", "content": negative_input},
-        {"role": "user", "content": "입력 텍스트의 내용에서 긍정적인 부분과 부정적인 부분을 각각 정리해서 따로 출력해. 단, 입력 텍스트에서 혐오표현, 비속어, 욕설, 은어, 감정적인 표현 등은 다른 착한 표현으로 대체해서 정리해."},
-        {"role": "user", "content": "정리된 문장을 한문단으로 작성해줘. '~입니다.' 형식으로 작성해줘"},
-        {"role": "user", "content": "피드백 대상을 나타내는 단어는 모두 삭제해줘."},
-        {"role": "user", "content": "오타가 나지 않도록 신경써줘"},
-        {"role": "user", "content": "그리고 대체된 표현의 개수를 출력해줘. 출력 형식은 [대체된 표현의 개수: ]\n 대체된 표현: 원래 표현 -> 대체된 표현 형식으로 한줄씩 출력해줘."},
-        {"role": "user", "content": "긍정적인 피드백과 부정적인 피드백, 그리고 대체된 표현만 말해줘. 다른 설명은 필요없어"},
+        {"role": "system", "content": input_text},
+        {"role": "user", "content": prompt},
     ],
-    max_tokens=300,  # 요약 결과의 최대 토큰 수 설정 (요약의 길이 조절)
 )
 
+output_text = analyze.choices[0].message.content
+
 # 결과 출력
-print(analyze.choices[0].message.content)
+print(output_text)
+
+#결과 엑셀로 저장
+
+# 대체된 표현 추출
+replacements = []
+start_index = output_text.find("대체된 표현:")
+while start_index != -1:
+    end_index = output_text.find("\n", start_index)
+    replacement = output_text[start_index:end_index]
+    replacements.append(replacement)
+    start_index = output_text.find("대체된 표현:", end_index)
+
+# 원래 표현과 대체된 표현 추출
+originals = []
+replaced = []
+for replacement in replacements:
+    original_start = replacement.find("대체된 표현:") + 1
+    original_end = replacement.find("->")
+    replaced_start = replacement.find("->") + 2
+    originals.append(replacement[original_start:original_end])
+    replaced.append(replacement[replaced_start:].strip())
+
+# 결과를 엑셀 파일로 저장
+data = {
+    "인물": ["A님"] * len(replacements),
+    "긍정적인 피드백": [output_text.split("긍정적인 피드백: ")[1].split("부정적인 피드백:")[0].strip()] * len(replacements),
+    "부정적인 피드백": [output_text.split("부정적인 피드백: ")[1].split("대체된 표현의 개수:")[0].strip()] * len(replacements),
+    "원래 표현": originals,
+    "대체된 표현": replaced
+}
+
+df = pd.DataFrame(data)
+
+# 결과를 엑셀 파일로 저장
+df.to_excel("피드백 결과.xlsx", index=False)

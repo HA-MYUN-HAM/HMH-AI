@@ -25,24 +25,36 @@ sentences = [
     "일을 너무 못해서 짜증나요. 제발 능력을 좀 키워오세요.",
     "당신이 맡은 일에 대해 마감 기한을 지켜주세요. 진짜 짜증나서 같이 일 못하겠어요. ",
     "당신은 항상 긍정적이고 최선을 다하지만, 기술적으로 성장하는 모습을 보여주시길 바랍니다."
+    "당신 생긴 게 거지같아요"
+    "목소리가 너무 앵앵거려서 듣기 싫어요"
 ]
 
 prompt = f"""
 입력된 테스트는 어떤 한 사람에 대한 동료평가 내용입니다.
-피드백 대상은 문장 내에서 표현되며, 만약 대상을 명확히 할 수 없을 경우, ///대상없음/// 으로 출력하세요
+피드백 대상의 이름은 문장 내에서 추출하세요, 만약 대상을 명확히 할 수 없을 경우, 대상없음으로 나타냅니다.
+만일 추출된 피드백 대상의 이름이 ~님 이라면 님자를 빼고 이름만 추출하세요. 별도의 출력은 필요없습니다.
+정리된 피드백에는 대상의 이름이 나오지 않아야 합니다.
+기존 피드백과 같은 말투를 사용하거나 ~입니다. 형식으로 작성하세요.
 입력 텍스트의 내용에서 긍정적인 부분과 부정적인 부분을 각각 넘버링 없이 문장 형식으로 정리하세요.
-단, 입력 텍스트에서 혐오표현, 비속어, 욕설, 은어, 감정적인 표현 등은 다른 착한 표현으로 대체해서 정리해야 합니다.
+단, 입력 텍스트에서 혐오표현, 비속어, 욕설, 은어, 감정적인 표현 등은 다른 부드러운 표현으로 대체해서 정리해야 합니다.
+만약 생략된 표현이 있다면 대체된 표현은 생략으로 작성하고, 대체된 표현에 추가하세요. 피드백 문장에는 생략된 내용을 언급하지 않아도 됩니다.
 
-<피드백 대상> 님의 피드백 결과
+아래와 같은 출력 형식을 지켜주세요. 단, 대체된 표현이 없는경우, 대체된 표현의 개수까지만 출력하면 됩니다.
+
+
+이름 님의 피드백 결과
 긍정적인 피드백: ...
 부정적인 피드백: ...
 
-[대체된 표현의 개수: ]
+대체된 표현의 개수: 
 대체된 표현: 원래표현 -> 대체된 표현
 ...
 대체된 표현: 원래표현 -> 대체된 표현 
 
+피드백 종료
 """
+
+
 
 # 문장들을 하나의 문자열로 결합
 positive_input = "\n".join(positive)
@@ -77,22 +89,28 @@ while start_index != -1:
 originals = []
 replaced = []
 for replacement in replacements:
-    original_start = replacement.find("대체된 표현:") + 1
+    original_start = replacement.find("대체된 표현:") + 8
     original_end = replacement.find("->")
     replaced_start = replacement.find("->") + 2
     originals.append(replacement[original_start:original_end])
     replaced.append(replacement[replaced_start:].strip())
 
+df = pd.read_excel("피드백 결과.xlsx")
+
 # 결과를 엑셀 파일로 저장
 data = {
-    "인물": ["A님"] * len(replacements),
-    "긍정적인 피드백": [output_text.split("긍정적인 피드백: ")[1].split("부정적인 피드백:")[0].strip()] * len(replacements),
-    "부정적인 피드백": [output_text.split("부정적인 피드백: ")[1].split("대체된 표현의 개수:")[0].strip()] * len(replacements),
-    "원래 표현": originals,
-    "대체된 표현": replaced
+    "인물": [output_text.split("님")[0].strip()] ,
+    "긍정적인 피드백": [output_text.split("긍정적인 피드백: ")[1].split("\n")[0].strip()],
+    "부정적인 피드백": [output_text.split("부정적인 피드백: ")[1].split("\n")[0].strip()],
+    "대체된 표현의 개수": [output_text.split("대체된 표현의 개수: ")[1].split("\n")[0].strip()] 
 }
 
-df = pd.DataFrame(data)
+# 원래 표현과 대체된 표현 추가
+for i, replacement in enumerate(replacements):
+    data[f"원래 표현 {i+1} "] = originals[i] if i < len(originals) else ""
+    data[f"대체된 표현 {i+1}"] = replaced[i] if i < len(replaced) else ""
+
+df= pd.concat ([df, pd.DataFrame(data)], ignore_index=True)
 
 # 결과를 엑셀 파일로 저장
 df.to_excel("피드백 결과.xlsx", index=False)
